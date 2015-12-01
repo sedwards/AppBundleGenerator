@@ -12,7 +12,7 @@
  *  (2.0) By distributing this application, you grant non-exclusive patent rights to any
  * patents you may own which describe the functionality of this program, for example: 
  * (You own a patent on building some sort of ApplicationBundle or icon conversion)
- *  (2.1) This agreement in no forces the license of any other patented technology
+ *  (2.1) This agreement in no way forces the license of any other patented technology
  *  (3.0) As a special exception to this license agreement, you may chose to incorporate parts
  * of this application under the terms of the (L)GPLv2 and GPLv2.1 or any later version.
  *  (3.1) If you want to license under any other terms, please contact the author.
@@ -81,7 +81,7 @@ CFDictionaryRef CreateMyDictionary(const char *linkname)
    /* FIXME - Some values assumed the ought not to be */
    CFDictionarySetValue( dict, CFSTR("CFBundleDevelopmentRegion"), CFSTR("English") ); 
    CFDictionarySetValue( dict, CFSTR("CFBundleExecutable"), linkstr );
-   CFDictionarySetValue( dict, CFSTR("CFBundleIdentifier"), CFSTR("org.winehq.wine") ); 
+   CFDictionarySetValue( dict, CFSTR("CFBundleIdentifier"), CFSTR("org.darkstar.root") ); 
    CFDictionarySetValue( dict, CFSTR("CFBundleInfoDictionaryVersion"), CFSTR("6.0") ); 
    CFDictionarySetValue( dict, CFSTR("CFBundleName"), linkstr );
    CFDictionarySetValue( dict, CFSTR("CFBundlePackageType"), CFSTR("APPL") ); 
@@ -197,6 +197,8 @@ static BOOL generate_bundle_script(const char *path_to_bundle_macos, const char 
     return TRUE;
 }
 
+/* FIXME: Adapt the svg and png ICNS conversion script and enable this to copy the
+ * the resulting icon in to the bundle */
 BOOL add_icns_for_bundle(const char *icon_src, const char *path_to_bundle_resources)
 {
    #if 0

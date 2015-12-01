@@ -1,0 +1,29 @@
+Generating a Mac Icon file from SVG
+ 1. Create a target iconset directory for the image to create icons for
+   Example: Putty.svg
+   $ mkdir Putty.iconset
+
+ 2. Use qlmanage to create a full size Png image based on the source SVG
+   $ qlmanage -t -s 1024 -o Putty.iconset Putty.svg
+   This will create a resuling file Putty.iconset/Putty.svg.png
+
+ 3. Create images of icon for various scales 
+
+   $ sips -z 16 16 Putty.iconset/Putty.svg.png --out "Putty.iconset/icon_16x16.png"
+   $ sips -z 32 32 Putty.iconset/Putty.svg.png --out "Putty.iconset/icon_16x16@2x.png"
+   $ cp "Putty.iconset/icon_16x16@2x.png" "Putty.iconset/icon_32x32.png"
+
+   $ sips -z 64 64 Putty.iconset/Putty.svg.png --out "Putty.iconset/icon_32x32@2x.png"
+   $ sips -z 128 128 Putty.iconset/Putty.svg.png --out "Putty.iconset/icon_128x128.png"
+   $ sips -z 256 256 Putty.iconset/Putty.svg.png --out "Putty.iconset/icon_128x128@2x.png"
+   $ cp "Putty.iconset/icon_128x128@2x.png" "Putty.iconset/icon_256x256.png"
+
+   $ sips -z 512 512 Putty.iconset/Putty.svg.png --out "Putty.iconset/icon_256x256@2x.png"
+   $ cp "Putty.iconset/icon_256x256@2x.png" "Putty.iconset/icon_512x512.png"
+
+   $ sips -z 1024 1024 Putty.iconset/Putty.svg.png --out "Putty.iconset/icon_512x512@2x.png"
+
+  4. Create Putty.icns (Mac Icon) for use in the Application Bundle
+   $ iconutil -c icns Putty.iconset 
+   
+

@@ -56,7 +56,6 @@
 #include "shared.h"
 
 extern char *mac_desktop_dir;
-char *wine_applications_dir;
 char* heap_printf(const char *format, ...);
 BOOL create_directories(char *directory);
 
@@ -89,7 +88,8 @@ CFDictionaryRef CreateMyDictionary(const char *linkname)
    CFDictionarySetValue( dict, CFSTR("CFBundleVersion"), CFSTR("1.0") ); 
    CFDictionarySetValue( dict, CFSTR("CFBundleSignature"), CFSTR("???") ); 
    CFDictionarySetValue( dict, CFSTR("CFBundleVersion"), CFSTR("1.0") ); 
-   CFDictionarySetValue( dict, CFSTR("CFBundleIconFile"), CFSTR("icon.icns") ); 
+   CFDictionarySetValue( dict, CFSTR("CFBundleIconFile"), CFSTR("icon.icns") );
+   /* CFDictionarySetValue( dict, CFSTR("CFBundleDisplayName "), linkstr ); */
    
    return dict;
 }
@@ -197,11 +197,61 @@ static BOOL generate_bundle_script(const char *path_to_bundle_macos, const char 
     return TRUE;
 }
 
-static BOOL generate_icns_for_bundle(const char *path, const char *path_to_bundle_resources)
+BOOL add_icns_for_bundle(const char *icon_src, const char *path_to_bundle_resources)
 {
-    /* Stub for now */
-    DEBUG_PRINT("Unable to extract png file from target executable for App Bundle\n");
-    return FALSE;
+   #if 0
+    int fd_to, fd_from;
+    char buf[4096];
+    ssize_t nread;
+    int saved_errno;
+
+    fd_from = open(from, O_RDONLY);
+    if (fd_from < 0)
+        return -1;
+
+    fd_to = open(to, O_WRONLY | O_CREAT | O_EXCL, 0666);
+    if (fd_to < 0)
+        goto out_error;
+
+    while (nread = read(fd_from, buf, sizeof buf), nread > 0)
+    {
+        char *out_ptr = buf;
+        ssize_t nwritten;
+
+        do {
+            nwritten = write(fd_to, out_ptr, nread);
+
+            if (nwritten >= 0)
+            {
+                nread -= nwritten;
+                out_ptr += nwritten;
+            }
+            else if (errno != EINTR)
+            {
+                goto out_error;
+            }
+        } while (nread > 0);
+    }
+
+    if (nread == 0)
+    {
+        if (close(fd_to) < 0)
+        {
+            fd_to = -1;
+            goto out_error;
+        }
+        close(fd_from);
+
+        /* Success! */
+        return 0;
+    }
+
+    close(fd_from);
+    if (fd_to >= 0)
+        close(fd_to);
+
+    return -1;
+  #endif
 }
 
 /* build out the directory structure for the bundle and then populate */
@@ -233,10 +283,6 @@ BOOL build_app_bundle(const char *path, char *bundle_dst, const char *args, cons
 
     DEBUG_PRINT("created bundle %s\n", path_to_bundle);
     
-    ret = generate_icns_for_bundle(path, path_to_bundle_resources);
-    if(ret==FALSE)
-       DEBUG_PRINT("Failed to generate icon for Application Bundle\n");
-
     ret = generate_bundle_script(path_to_bundle_macos, path, args, linkname);
     if(ret==FALSE)
        return ret;
@@ -248,9 +294,12 @@ BOOL build_app_bundle(const char *path, char *bundle_dst, const char *args, cons
     ret = generate_plist(path_to_bundle_contents, linkname);
     if(ret==FALSE)
        return ret;
+
+    ret = add_icns_for_bundle(path, path_to_bundle_resources);
+    if(ret==FALSE)
+       DEBUG_PRINT("Failed to generate icon for Application Bundle\n");
+
     /* we really shouldn't get here */
     return ret;
 }
-
-
 

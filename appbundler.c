@@ -61,59 +61,220 @@ BOOL create_directories(char *directory);
 
 CFPropertyListRef CreateMyPropertyListFromFile(CFURLRef fileURL);
 void WriteMyPropertyListToFile(CFPropertyListRef propertyList, CFURLRef fileURL );
- 
- 
-CFDictionaryRef CreateMyDictionary(const char *linkname)
+
+
+/* Sanitize bundle name for use in identifier: lowercase, replace spaces with hyphens, remove special chars */
+static char* sanitize_bundle_name(const char *name)
+{
+    size_t len = strlen(name);
+    char *sanitized = malloc(len + 1);
+    size_t j = 0;
+
+    if (!sanitized) return NULL;
+
+    for (size_t i = 0; i < len; i++) {
+        char c = name[i];
+
+        /* Convert to lowercase */
+        if (c >= 'A' && c <= 'Z') {
+            sanitized[j++] = c + 32;  /* Convert to lowercase */
+        }
+        /* Replace spaces with hyphens */
+        else if (c == ' ') {
+            sanitized[j++] = '-';
+        }
+        /* Keep alphanumeric and hyphens */
+        else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+            sanitized[j++] = c;
+        }
+        /* Skip other characters */
+    }
+
+    sanitized[j] = '\0';
+    return sanitized;
+}
+
+/* Generate a unique bundle identifier from the bundle name */
+static CFStringRef generate_bundle_identifier(const char *linkname)
+{
+    char *sanitized;
+    char *identifier;
+    CFStringRef result;
+
+    sanitized = sanitize_bundle_name(linkname);
+    if (!sanitized) {
+        /* Fallback to generic identifier if sanitization fails */
+        return CFStringCreateWithCString(NULL, "com.appbundlegenerator.app", kCFStringEncodingUTF8);
+    }
+
+    /* Format: com.appbundlegenerator.<sanitized_name> */
+    identifier = heap_printf("com.appbundlegenerator.%s", sanitized);
+    free(sanitized);
+
+    if (!identifier) {
+        return CFStringCreateWithCString(NULL, "com.appbundlegenerator.app", kCFStringEncodingUTF8);
+    }
+
+    result = CFStringCreateWithCString(NULL, identifier, kCFStringEncodingUTF8);
+    free(identifier);
+
+    return result;
+}
+
+
+CFDictionaryRef CreateMyDictionary(const char *linkname, const char *category,
+                                   const char *min_os_version, const char *version,
+                                   const char *custom_identifier)
 {
    CFMutableDictionaryRef dict;
    CFStringRef linkstr;
+   CFStringRef bundleId;
+   CFStringRef minOsVer;
+   CFStringRef catStr;
+   CFStringRef verStr;
 
-   linkstr = CFStringCreateWithCString(NULL, linkname, CFStringGetSystemEncoding());
- 
- 
+   linkstr = CFStringCreateWithCString(NULL, linkname, kCFStringEncodingUTF8);
+
+   /* Generate or use custom bundle identifier */
+   if (custom_identifier) {
+       bundleId = CFStringCreateWithCString(NULL, custom_identifier, kCFStringEncodingUTF8);
+   } else {
+       bundleId = generate_bundle_identifier(linkname);
+   }
+
    /* Create a dictionary that will hold the data. */
    dict = CFDictionaryCreateMutable( kCFAllocatorDefault,
             0,
             &kCFTypeDictionaryKeyCallBacks,
             &kCFTypeDictionaryValueCallBacks );
- 
-   /* Put the various items into the dictionary. */ 
-   /* FIXME - Some values assumed the ought not to be */
-   CFDictionarySetValue( dict, CFSTR("CFBundleDevelopmentRegion"), CFSTR("English") ); 
+
+   /* ========== EXISTING KEYS (modernized) ========== */
+
+   /* Use modern locale code "en" instead of "English" */
+   CFDictionarySetValue( dict, CFSTR("CFBundleDevelopmentRegion"), CFSTR("en") );
+
    CFDictionarySetValue( dict, CFSTR("CFBundleExecutable"), linkstr );
-   CFDictionarySetValue( dict, CFSTR("CFBundleIdentifier"), CFSTR("org.darkstar.root") ); 
-   CFDictionarySetValue( dict, CFSTR("CFBundleInfoDictionaryVersion"), CFSTR("6.0") ); 
+
+   /* Use dynamically generated identifier instead of hardcoded */
+   CFDictionarySetValue( dict, CFSTR("CFBundleIdentifier"), bundleId );
+
+   CFDictionarySetValue( dict, CFSTR("CFBundleInfoDictionaryVersion"), CFSTR("6.0") );
+
    CFDictionarySetValue( dict, CFSTR("CFBundleName"), linkstr );
-   CFDictionarySetValue( dict, CFSTR("CFBundlePackageType"), CFSTR("APPL") ); 
-   CFDictionarySetValue( dict, CFSTR("CFBundleVersion"), CFSTR("1.0") ); 
-   CFDictionarySetValue( dict, CFSTR("CFBundleSignature"), CFSTR("???") ); 
-   CFDictionarySetValue( dict, CFSTR("CFBundleVersion"), CFSTR("1.0") ); 
+
+   /* Add display name for better UI appearance */
+   CFDictionarySetValue( dict, CFSTR("CFBundleDisplayName"), linkstr );
+
+   CFDictionarySetValue( dict, CFSTR("CFBundlePackageType"), CFSTR("APPL") );
+
+   /* Use provided version or default */
+   if (version) {
+       verStr = CFStringCreateWithCString(NULL, version, kCFStringEncodingUTF8);
+       CFDictionarySetValue( dict, CFSTR("CFBundleShortVersionString"), verStr );
+       CFDictionarySetValue( dict, CFSTR("CFBundleVersion"), verStr );
+       CFRelease(verStr);
+   } else {
+       CFDictionarySetValue( dict, CFSTR("CFBundleShortVersionString"), CFSTR("1.0.0") );
+       CFDictionarySetValue( dict, CFSTR("CFBundleVersion"), CFSTR("1") );
+   }
+
+   /* Signature is deprecated but kept for compatibility */
+   CFDictionarySetValue( dict, CFSTR("CFBundleSignature"), CFSTR("????") );
+
    CFDictionarySetValue( dict, CFSTR("CFBundleIconFile"), CFSTR("icon.icns") );
-   /* CFDictionarySetValue( dict, CFSTR("CFBundleDisplayName "), linkstr ); */
-   
+
+   /* ========== NEW KEYS for macOS 12+ ========== */
+
+   /* LSMinimumSystemVersion - CRITICAL for macOS 12+ compatibility */
+   if (min_os_version) {
+       minOsVer = CFStringCreateWithCString(NULL, min_os_version, kCFStringEncodingUTF8);
+       CFDictionarySetValue( dict, CFSTR("LSMinimumSystemVersion"), minOsVer );
+       CFRelease(minOsVer);
+   } else {
+       CFDictionarySetValue( dict, CFSTR("LSMinimumSystemVersion"), CFSTR("12.0") );
+   }
+
+   /* NSHighResolutionCapable - Retina display support */
+   CFDictionarySetValue( dict, CFSTR("NSHighResolutionCapable"), kCFBooleanTrue );
+
+   /* LSApplicationCategoryType - Required for Gatekeeper */
+   if (category) {
+       catStr = CFStringCreateWithCString(NULL, category, kCFStringEncodingUTF8);
+       CFDictionarySetValue( dict, CFSTR("LSApplicationCategoryType"), catStr );
+       CFRelease(catStr);
+   } else {
+       CFDictionarySetValue( dict, CFSTR("LSApplicationCategoryType"),
+                           CFSTR("public.app-category.utilities") );
+   }
+
+   /* NSSupportsAutomaticGraphicsSwitching - GPU selection on MacBook Pros */
+   CFDictionarySetValue( dict, CFSTR("NSSupportsAutomaticGraphicsSwitching"), kCFBooleanTrue );
+
+   /* NSPrincipalClass - Required for modern apps */
+   CFDictionarySetValue( dict, CFSTR("NSPrincipalClass"), CFSTR("NSApplication") );
+
+   /* Cleanup */
+   CFRelease(linkstr);
+   CFRelease(bundleId);
+
    return dict;
 }
  
-void WriteMyPropertyListToFile( CFPropertyListRef propertyList, CFURLRef fileURL ) 
+void WriteMyPropertyListToFile( CFPropertyListRef propertyList, CFURLRef fileURL )
 {
-   CFDataRef xmlData;
-   Boolean status;
-   SInt32 errorCode;
- 
-   /* Convert the property list into XML data */
-   xmlData = CFPropertyListCreateXMLData( kCFAllocatorDefault, propertyList );
- 
-   /* Write the XML data to the file */
-   status = CFURLWriteDataAndPropertiesToResource (
-               fileURL,
-               xmlData,
-               NULL,
-               &errorCode);
- 
-   CFRelease(xmlData);
+   CFDataRef data;
+   CFErrorRef error = NULL;
+   CFWriteStreamRef stream;
+
+   /* Convert the property list into binary data using modern API */
+   data = CFPropertyListCreateData(
+       kCFAllocatorDefault,
+       propertyList,
+       kCFPropertyListBinaryFormat_v1_0,  /* Binary format for faster parsing */
+       0,
+       &error
+   );
+
+   if (!data) {
+       if (error) {
+           CFStringRef errorDesc = CFErrorCopyDescription(error);
+           if (errorDesc) {
+               DEBUG_PRINT("Property list creation failed: %s\n",
+                          CFStringGetCStringPtr(errorDesc, kCFStringEncodingUTF8));
+               CFRelease(errorDesc);
+           }
+           CFRelease(error);
+       }
+       return;
+   }
+
+   /* Write using CFWriteStream instead of deprecated API */
+   stream = CFWriteStreamCreateWithFile(kCFAllocatorDefault, fileURL);
+   if (!stream) {
+       CFRelease(data);
+       return;
+   }
+
+   if (CFWriteStreamOpen(stream)) {
+       CFIndex dataLength = CFDataGetLength(data);
+       CFIndex bytesWritten = CFWriteStreamWrite(
+           stream,
+           CFDataGetBytePtr(data),
+           dataLength
+       );
+
+       if (bytesWritten != dataLength) {
+           DEBUG_PRINT("Warning: Incomplete write to plist file\n");
+       }
+
+       CFWriteStreamClose(stream);
+   }
+
+   CFRelease(stream);
+   CFRelease(data);
 }
 
-static BOOL generate_plist(const char *path_to_bundle_contents, const char *linkname)
+static BOOL generate_plist(const char *path_to_bundle_contents, const AppBundleOptions *options)
 {
     char *plist_path;
     static const char info_dot_plist_file[] = "Info.plist";
@@ -122,11 +283,17 @@ static BOOL generate_plist(const char *path_to_bundle_contents, const char *link
     CFURLRef fileURL;
 
     /* Append all of the filename and path stuff and shove it in to CFStringRef */
-    plist_path = heap_printf("%s/%s", path_to_bundle_contents, info_dot_plist_file); 
-    pathstr = CFStringCreateWithCString(NULL, plist_path, CFStringGetSystemEncoding());
- 
-    /* Construct a complex dictionary object */
-    propertyList = CreateMyDictionary(linkname);
+    plist_path = heap_printf("%s/%s", path_to_bundle_contents, info_dot_plist_file);
+    pathstr = CFStringCreateWithCString(NULL, plist_path, kCFStringEncodingUTF8);
+
+    /* Construct a complex dictionary object with all options */
+    propertyList = CreateMyDictionary(
+        options->bundle_name,
+        options->app_category,
+        options->min_os_version,
+        options->version,
+        options->bundle_identifier
+    );
  
     /* Create a URL that specifies the file we will create to hold the XML data. */
     fileURL = CFURLCreateWithFileSystemPath( kCFAllocatorDefault,
@@ -167,8 +334,8 @@ static BOOL generate_pkginfo_file(const char* path_to_bundle_contents)
 
 
 /* inspired by write_desktop_entry() in xdg support code */
-static BOOL generate_bundle_script(const char *path_to_bundle_macos, const char *path, 
-                                   const char *args, const char *linkname)
+static BOOL generate_bundle_script(const char *path_to_bundle_macos, const char *path,
+                                   const char *args __attribute__((unused)), const char *linkname)
 {
     FILE *file;
     char *bundle_and_script;
@@ -197,81 +364,92 @@ static BOOL generate_bundle_script(const char *path_to_bundle_macos, const char 
     return TRUE;
 }
 
-/* FIXME: Adapt the svg and png ICNS conversion script and enable this to copy the
- * the resulting icon in to the bundle */
+/* Add icon to bundle - now fully implemented with PNG/SVG/ICNS support */
 BOOL add_icns_for_bundle(const char *icon_src, const char *path_to_bundle_resources)
 {
-   #if 0
-    int fd_to, fd_from;
-    char buf[4096];
-    ssize_t nread;
-    int saved_errno;
+    IconFormat format;
+    char *output_icns;
+    BOOL ret = FALSE;
 
-    fd_from = open(from, O_RDONLY);
-    if (fd_from < 0)
-        return -1;
-
-    fd_to = open(to, O_WRONLY | O_CREAT | O_EXCL, 0666);
-    if (fd_to < 0)
-        goto out_error;
-
-    while (nread = read(fd_from, buf, sizeof buf), nread > 0)
-    {
-        char *out_ptr = buf;
-        ssize_t nwritten;
-
-        do {
-            nwritten = write(fd_to, out_ptr, nread);
-
-            if (nwritten >= 0)
-            {
-                nread -= nwritten;
-                out_ptr += nwritten;
-            }
-            else if (errno != EINTR)
-            {
-                goto out_error;
-            }
-        } while (nread > 0);
+    if (!icon_src || !path_to_bundle_resources) {
+        DEBUG_PRINT("Invalid parameters to add_icns_for_bundle\n");
+        return FALSE;
     }
 
-    if (nread == 0)
-    {
-        if (close(fd_to) < 0)
-        {
-            fd_to = -1;
-            goto out_error;
-        }
-        close(fd_from);
-
-        /* Success! */
-        return 0;
+    /* Check if source file exists and is readable */
+    if (access(icon_src, R_OK) != 0) {
+        DEBUG_PRINT("Icon source file not accessible: %s\n", icon_src);
+        return FALSE;
     }
 
-    close(fd_from);
-    if (fd_to >= 0)
-        close(fd_to);
+    /* Detect the icon format */
+    format = detect_icon_format(icon_src);
+    if (format == ICON_FORMAT_UNKNOWN) {
+        DEBUG_PRINT("Unknown icon format: %s (supported: .png, .svg, .icns)\n", icon_src);
+        return FALSE;
+    }
 
-    return -1;
-  #endif
+    /* Determine output path */
+    output_icns = heap_printf("%s/icon.icns", path_to_bundle_resources);
+    if (!output_icns) {
+        DEBUG_PRINT("Failed to allocate memory for output path\n");
+        return FALSE;
+    }
+
+    /* Convert or copy based on format */
+    switch(format) {
+        case ICON_FORMAT_ICNS:
+            DEBUG_PRINT("Icon is already ICNS, copying directly\n");
+            ret = copy_file(icon_src, output_icns);
+            break;
+
+        case ICON_FORMAT_PNG:
+            DEBUG_PRINT("Converting PNG icon to ICNS\n");
+            ret = convert_png_to_icns(icon_src, output_icns);
+            break;
+
+        case ICON_FORMAT_SVG:
+            DEBUG_PRINT("Converting SVG icon to ICNS\n");
+            ret = convert_svg_to_icns(icon_src, output_icns);
+            break;
+
+        default:
+            DEBUG_PRINT("Unsupported icon format\n");
+            ret = FALSE;
+    }
+
+    free(output_icns);
+
+    if (ret) {
+        DEBUG_PRINT("Successfully added icon to bundle\n");
+    } else {
+        DEBUG_PRINT("Failed to add icon to bundle\n");
+    }
+
+    return ret;
 }
 
 /* build out the directory structure for the bundle and then populate */
-BOOL build_app_bundle(const char *path, char *bundle_dst, const char *args, const char *linkname)
+BOOL build_app_bundle(const AppBundleOptions *options)
 {
     BOOL ret = FALSE;
     char *bundle, *path_to_bundle, *path_to_bundle_contents, *path_to_bundle_macos;
     char *path_to_bundle_resources, *path_to_bundle_resources_lang;
-    static const char extentsion[] = "app";
+    static const char extension[] = "app";
     static const char contents[] = "Contents";
     static const char macos[] = "MacOS";
     static const char resources[] = "Resources";
     static const char resources_lang[] = "English.lproj"; /* FIXME */
-    
-    DEBUG_PRINT("bundle file name %s\n", linkname);
 
-    bundle = heap_printf("%s.%s", linkname, extentsion);
-    path_to_bundle = heap_printf("%s/%s", bundle_dst, bundle);
+    if (!options) {
+        DEBUG_PRINT("Invalid options passed to build_app_bundle\n");
+        return FALSE;
+    }
+
+    DEBUG_PRINT("bundle file name %s\n", options->bundle_name);
+
+    bundle = heap_printf("%s.%s", options->bundle_name, extension);
+    path_to_bundle = heap_printf("%s/%s", options->bundle_dest, bundle);
     path_to_bundle_contents = heap_printf("%s/%s", path_to_bundle, contents);
     path_to_bundle_macos =  heap_printf("%s/%s", path_to_bundle_contents, macos);
     path_to_bundle_resources = heap_printf("%s/%s", path_to_bundle_contents, resources);
@@ -284,24 +462,135 @@ BOOL build_app_bundle(const char *path, char *bundle_dst, const char *args, cons
     create_directories(path_to_bundle_resources_lang);
 
     DEBUG_PRINT("created bundle %s\n", path_to_bundle);
-    
-    ret = generate_bundle_script(path_to_bundle_macos, path, args, linkname);
+
+    ret = generate_bundle_script(path_to_bundle_macos, options->executable_path, NULL, options->bundle_name);
     if(ret==FALSE)
        return ret;
 
-    ret = generate_pkginfo_file(path_to_bundle_contents); 
+    ret = generate_pkginfo_file(path_to_bundle_contents);
     if(ret==FALSE)
        return ret;
 
-    ret = generate_plist(path_to_bundle_contents, linkname);
+    ret = generate_plist(path_to_bundle_contents, options);
     if(ret==FALSE)
        return ret;
 
-    ret = add_icns_for_bundle(path, path_to_bundle_resources);
-    if(ret==FALSE)
-       DEBUG_PRINT("Failed to generate icon for Application Bundle\n");
+    /* Add icon if provided */
+    if (options->icon_path) {
+        ret = add_icns_for_bundle(options->icon_path, path_to_bundle_resources);
+        if(ret==FALSE)
+           DEBUG_PRINT("Failed to add icon to Application Bundle\n");
+    }
 
-    /* we really shouldn't get here */
-    return ret;
+    /* Cleanup allocated paths */
+    free(bundle);
+    free(path_to_bundle);
+    free(path_to_bundle_contents);
+    free(path_to_bundle_macos);
+    free(path_to_bundle_resources);
+    free(path_to_bundle_resources_lang);
+
+    return TRUE;
+}
+
+/* Code sign a bundle with specified options */
+BOOL codesign_bundle(const char *bundle_path, const CodeSignOptions *options)
+{
+    char cmd[4096];
+    int offset = 0;
+    int result;
+
+    if (!bundle_path) {
+        DEBUG_PRINT("Invalid bundle path for code signing\n");
+        return FALSE;
+    }
+
+    if (!options || !options->identity) {
+        DEBUG_PRINT("Code signing skipped: no identity provided\n");
+        return TRUE;  /* Not an error, just skip signing */
+    }
+
+    DEBUG_PRINT("Code signing bundle: %s\n", bundle_path);
+    DEBUG_PRINT("  Identity: %s\n", options->identity);
+
+    /* Build codesign command */
+    offset = snprintf(cmd, sizeof(cmd), "codesign -s '%s'", options->identity);
+
+    /* Add hardened runtime flag */
+    if (options->enable_hardened_runtime) {
+        DEBUG_PRINT("  Hardened runtime: enabled\n");
+        offset += snprintf(cmd + offset, sizeof(cmd) - offset, " -o runtime");
+    }
+
+    /* Add force flag to replace existing signature */
+    if (options->force) {
+        DEBUG_PRINT("  Force: replacing existing signature\n");
+        offset += snprintf(cmd + offset, sizeof(cmd) - offset, " --force");
+    }
+
+    /* Add timestamp for distribution (recommended) */
+    if (options->timestamp) {
+        DEBUG_PRINT("  Timestamp: enabled\n");
+        offset += snprintf(cmd + offset, sizeof(cmd) - offset, " --timestamp");
+    }
+
+    /* Add entitlements if provided */
+    if (options->entitlements_path) {
+        DEBUG_PRINT("  Entitlements: %s\n", options->entitlements_path);
+        offset += snprintf(cmd + offset, sizeof(cmd) - offset,
+                         " --entitlements '%s'", options->entitlements_path);
+    }
+
+    /* Add verbose output for debugging */
+    offset += snprintf(cmd + offset, sizeof(cmd) - offset, " --verbose");
+
+    /* Add bundle path */
+    offset += snprintf(cmd + offset, sizeof(cmd) - offset, " '%s'", bundle_path);
+
+    /* Redirect stderr to stdout for better error capture */
+    offset += snprintf(cmd + offset, sizeof(cmd) - offset, " 2>&1");
+
+    DEBUG_PRINT("Executing: %s\n", cmd);
+
+    /* Execute codesign command */
+    result = system(cmd);
+
+    if (result != 0) {
+        DEBUG_PRINT("Code signing failed with exit code %d\n", result);
+        return FALSE;
+    }
+
+    DEBUG_PRINT("Code signing successful\n");
+    return TRUE;
+}
+
+/* Verify the code signature of a bundle */
+BOOL verify_codesign(const char *bundle_path)
+{
+    char cmd[2048];
+    int result;
+
+    if (!bundle_path) {
+        DEBUG_PRINT("Invalid bundle path for verification\n");
+        return FALSE;
+    }
+
+    DEBUG_PRINT("Verifying code signature: %s\n", bundle_path);
+
+    /* Build verification command */
+    snprintf(cmd, sizeof(cmd),
+            "codesign --verify --verbose=2 '%s' 2>&1",
+            bundle_path);
+
+    /* Execute verification */
+    result = system(cmd);
+
+    if (result != 0) {
+        DEBUG_PRINT("Code signature verification failed (exit code: %d)\n", result);
+        return FALSE;
+    }
+
+    DEBUG_PRINT("Code signature verification successful\n");
+    return TRUE;
 }
 

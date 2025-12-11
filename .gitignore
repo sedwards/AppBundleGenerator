@@ -1,0 +1,14 @@
+# Build artifacts
+*.o
+AppBundleGenerator
+
+# macOS
+.DS_Store
+
+# Temporary files
+*.swp
+*.swo
+*~
+
+# Test bundles
+*.app/
